@@ -5,9 +5,9 @@
 
 #include <fstream>
 
-fp::string message = "Hello 世界\n";
-fp::string libc_windows = "msvcrt";
-fp::string libc_linux = "libc.so.6";
+fp::string message = "Hello 世界\n"_fp;
+fp::string libc_windows = "msvcrt"_fp;
+fp::string libc_linux = "libc.so.6"_fp;
 auto libc = fp::builder::string{} << libc_windows << '\0' << libc_linux << '\0' << "libc";
 auto strings = fp::builder::string{} << libc << '\0' << "printf" << '\0' << message << '\0';
 

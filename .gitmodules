@@ -1,6 +1,6 @@
 [submodule "mizuvm"]
 	path = mizuvm
-	url = https://github.com/joshuadahlunr/mizuvm
+	url = https://github.com/data-oriented-ir/mizuvm.git
 [submodule "argparse"]
 	path = argparse
 	url = https://github.com/morrisfranken/argparse.git
