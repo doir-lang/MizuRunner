@@ -1,4 +1,5 @@
 #define MIZU_IMPLEMENTATION
+#define FP_FORMAT_SUPPORT
 #include <mizu/portable_format.hpp>
 #include <mizu/instructions.hpp>
 #include <ffi/instructions.hpp>
@@ -48,7 +49,8 @@ MIZU_MAIN() {
 	// auto printf = (uint32_t(*)(const char*))loader::lookup("printf", c);
 	// printf(message.c_str());
 
-	fp::raii::dynarray<std::byte> portable = mizu::portable::to_portable(fp::view<const opcode>{program, sizeof(program)/sizeof(program[0])}, strings.full_view().byte_view());
+	auto bytes = strings.full_view().byte_view();
+	fp::raii::dynarray<std::byte> portable = mizu::portable::to_portable(fp::view<const opcode>{program, sizeof(program)/sizeof(program[0])}, bytes);
 
 	std::ofstream fout("hello_world.mizu", std::ios::binary | std::ios::out);
 	fout.write((char*)portable.data(), portable.size());

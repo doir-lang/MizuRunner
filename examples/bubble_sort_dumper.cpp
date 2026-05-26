@@ -4,14 +4,14 @@
 
 #include <fstream>
 
-const fp::array<uint64_t, 100> numbers = {.raw = {
+const fp::array<uint64_t, 100> numbers = {{
 	179, 1630, 754, 259, 858, 970, 310, 1612, 1269, 1000, 397, 783, 814, 1812, 1778, 641, 1925, 382, 82, 1147,
 	152, 399, 1061, 1364, 1323, 1753, 96, 980, 1849, 1155, 1355, 1558, 168, 982, 1659, 598, 8, 1547, 52, 1164,
 	1555, 445, 1069, 1921, 627, 1337, 845, 193, 1829, 1572, 1681, 1885, 197, 894, 1940, 1081, 1839, 313, 26, 116,
 	692, 1105, 489, 1293, 502, 1019, 567, 496, 787, 1757, 1333, 1863, 1291, 1975, 744, 457, 1113, 1974, 246, 164,
 	1441, 854, 1710, 583, 648, 484, 1279, 1890, 1588, 1073, 1944, 1231, 656, 566, 1676, 301, 1931, 667, 1167, 707
 }};
-const fp::array<uint64_t, 100> sorted = {.raw = {
+const fp::array<uint64_t, 100> sorted = {{
 	8, 26, 52, 82, 96, 116, 152, 164, 168,179, 193, 197, 246, 259, 301, 310, 313, 382, 397, 399, 445, 457, 484, 489,
 	496, 502, 566, 567, 583, 598, 627, 641, 648, 656, 667, 692, 707, 744, 754, 783, 787, 814, 845, 854, 858, 894, 970,
 	980, 982, 1000, 1019, 1061, 1069, 1073, 1081, 1105, 1113, 1147, 1155, 1164, 1167, 1231, 1269, 1279, 1291, 1293,
@@ -22,6 +22,8 @@ const fp::array<uint64_t, 100> sorted = {.raw = {
 MIZU_MAIN() {
 	using namespace mizu;
 
+	// This program sorts the `numbers` and then compares them to the `sorted` array.
+	// It prints out the index of the first discrepency or 100 if they all match.
 	const static opcode program[] = {
 		opcode{find_label, 200}.set_immediate(label2immediate("bub")), // while loop
 		opcode{find_label, 201}.set_immediate(label2immediate("inner")), // for loop
