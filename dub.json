@@ -1,0 +1,69 @@
+{
+	"name": "mizurunner",
+	"description": "A simple executable wrapper around the Mizu assembly interpreter library",
+	"license": "Unlicense",
+	"targetType": "executable",
+
+	"dependencies": {
+		"mizu": {
+			"repository": "git+https://github.com/doir-lang/mizu.git",
+			"version": "f387b8fdb266c32a57fe1f02be3baccb44d75f78"
+		}
+	},
+
+	"dflags-ldc": ["-betterC", "-checkaction=C"],
+	"dflags-dmd": ["-betterC", "-checkaction=C"],
+
+	"lflags-windows": ["/LIBPATH:$PACKAGE_DIR/.vcpkg/lib"],
+
+	"buildTypes": {
+		"debug": { "buildOptions": ["debugMode", "debugInfo", "optimize"] },
+		"release": { "buildOptions": ["optimize", "inline"] }
+	},
+
+	"configurations": [
+		{
+			"name": "mizu",
+			"targetType": "executable",
+			"targetPath": "bin",
+			"targetName": "mizu",
+			"mainSourceFile": "source/runner.d",
+			"sourcePaths": ["source"],
+			"importPaths": ["source"],
+			"lflags-linux": ["--export-dynamic"],
+			"lflags-freebsd": ["--export-dynamic"],
+			"lflags-osx": ["-export_dynamic"]
+		},
+		{
+			"name": "mizu-trace",
+			"targetType": "executable",
+			"targetPath": "bin",
+			"targetName": "mizu-trace",
+			"mainSourceFile": "source/runner.d",
+			"sourcePaths": ["source"],
+			"importPaths": ["source"],
+			"lflags-linux": ["--export-dynamic"],
+			"lflags-freebsd": ["--export-dynamic"],
+			"lflags-osx": ["-export_dynamic"],
+			"versions": ["MizuEnableTracing"]
+		},
+		{
+			"name": "example-bubble-sort",
+			"targetType": "executable",
+			"targetPath": "bin",
+			"targetName": "bubble_sort_dumper",
+			"mainSourceFile": "examples/bubble_sort_dumper.d",
+			"sourcePaths": [],
+			"importPaths": []
+		},
+		{
+			"name": "example-hello-world",
+			"targetType": "executable",
+			"targetPath": "bin",
+			"targetName": "hello_world_dumper",
+			"mainSourceFile": "examples/hello_world_dumper.d",
+			"sourcePaths": [],
+			"importPaths": []
+		}
+	]
+}
