@@ -1,0 +1,12 @@
+.cache
+.vscode
+.dub
+.vcpkg
+bin
+vcpkg_installed
+dub.selections.json
+*.a
+*.lib
+*.o
+*.obj
+*.mizu
