@@ -33,7 +33,7 @@ int main(int argc, char** argv)
 		return 0;
 	}
 
-	mizu::setup_environment(env);
+	mizu::setup_environment(env, program.data(), program.data() + program.size());
 	MIZU_START_FROM_ENVIRONMENT(program.data(), env);
 	return 0;
 }
