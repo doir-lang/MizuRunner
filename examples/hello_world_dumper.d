@@ -1,11 +1,7 @@
 /**
-* Writes `hello_world.mizu`: a program that reaches through Mizu's FFI to the
-* host's libc and calls `printf`.
+* Writes `hello_world.mizu`: a program that reaches through Mizu's FFI to the host's libc and calls `printf`.
 *
-* The D port of the C++ `hello_world_dumper.cpp`. Where that built its string
-* table at run time with `fp::builder::string`, this one is a compile-time
-* concatenation and the offsets into it are `enum`s computed the same way, so
-* the whole table lives in read-only data.
+* The string table is a compile-time concatenation, and the offsets into it are `enum`s computed the same way, so the whole table lives in read-only data.
 *
 * Run with: `dub run -c example-hello-world --compiler=ldc2`
 */
@@ -13,8 +9,8 @@ module examples.hello_world_dumper;
 
 import core.stdc.stdio : fclose, fopen, fprintf, fwrite, stderr;
 
-import fp.dynarray : dynarrayFree = free;
-import fp.pointer : ptrLength = length;
+static import fp.dynarray;
+static import fp.pointer;
 
 import mizu;
 import mizu.ffi;
@@ -31,19 +27,10 @@ enum string functionName = "printf";
 /// Ditto
 enum string message = "Hello 世界\n";
 
-/**
-* The strings the program needs, laid out as they will sit at the bottom of
-* Mizu's stack. Each is null terminated, because everything reading them —
-* the dynamic loader, `printf` — expects a C string.
-*/
-static immutable char[] stringTable =
-	libcWindows ~ "\0" ~ libcLinux ~ "\0" ~ libcGeneric ~ "\0" ~ functionName ~ "\0" ~ message ~ "\0";
+/// The strings the program needs, laid out as they will sit at the bottom of Mizu's stack; each is null-terminated, because the dynamic loader and `printf` expect C strings.
+static immutable char[] stringTable = libcWindows ~ "\0" ~ libcLinux ~ "\0" ~ libcGeneric ~ "\0" ~ functionName ~ "\0" ~ message ~ "\0";
 
-/*
-* `pointerToStackBottom` counts *backwards* from the bottom of the stack, and
-* the table is placed so that its last byte is the last byte of the stack, so
-* a string's offset is how many bytes of the table start at it.
-*/
+/// Where each string sits for `pointerToStackBottom`, which counts backwards from the bottom of the stack; the table ends at the stack's last byte, so an offset is how many table bytes start at that string.
 enum size_t windowsOffset = stringTable.length;
 /// Ditto
 enum size_t linuxOffset = windowsOffset - (libcWindows.length + 1);
@@ -87,18 +74,23 @@ static immutable Opcode[19] program = [
 
 extern(C) int main() @nogc nothrow {
 	auto portable = toPortable(program[], stringTable[]);
-	scope(exit) dynarrayFree(portable);
+	scope(exit) fp.dynarray.free(portable);
+	if (portable is null) {
+		cast(void) fprintf(stderr, "Ran out of memory serializing the program.\n");
+		return 1;
+	}
 
 	auto file = fopen("hello_world.mizu", "wb");
 	if (file is null) {
-		fprintf(stderr, "Failed to open `hello_world.mizu` for writing.\n");
+		cast(void) fprintf(stderr, "Failed to open `hello_world.mizu` for writing.\n");
 		return 1;
 	}
-	scope(exit) fclose(file);
 
-	immutable size = ptrLength(portable);
-	if (fwrite(portable, 1, size, file) != size) {
-		fprintf(stderr, "Failed to write `hello_world.mizu`.\n");
+	immutable size = fp.pointer.length(portable);
+	immutable written = fwrite(portable, 1, size, file);
+	// `fclose` flushes, so a write can fail there as well as in `fwrite`.
+	if ((fclose(file) != 0) | (written != size)) {
+		cast(void) fprintf(stderr, "Failed to write `hello_world.mizu`.\n");
 		return 1;
 	}
 
