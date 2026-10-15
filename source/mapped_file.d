@@ -1,28 +1,13 @@
 /**
-* Read-only memory mapping of a whole file.
-*
-* This replaces [mio](https://github.com/mandreyel/mio), the single header
-* C++ library the original runner used, with the two system calls it was
-* being asked for: map the file, hand back a slice of it, unmap it again.
-* Mizu binaries are read once and never written, so nothing else mio offered
-* is needed here.
-*
-* Note:
-*   A zero length file is mapped as an empty slice rather than through
-*   `mmap`, which rejects a length of zero.
+* Read-only memory mapping of a whole file: map it, hand back a slice of it, unmap it again. Mizu binaries are read once and never written, so nothing more is needed.
 */
 module mapped_file;
 
 @nogc nothrow:
 
-/**
-* A file mapped into memory.
-*
-* `error` is null on success; otherwise `data` is empty and `error` describes
-* what went wrong. Release the mapping with `unmapFile` either way.
-*/
+/// A file mapped into memory; release it with `unmapFile`, whether or not the mapping succeeded.
 struct MappedFile {
-	/// The file's contents.
+	/// The file's contents; empty for an empty file or a failed mapping.
 	const(void)[] data;
 	/// Why the mapping failed, or null if it did not.
 	const(char)* error;
@@ -37,27 +22,32 @@ struct MappedFile {
 
 version (Windows) {
 
-import core.sys.windows.winbase :
-	CreateFileA, CreateFileMappingA, GetFileSizeEx, MapViewOfFile, UnmapViewOfFile,
-	CloseHandle, INVALID_HANDLE_VALUE, OPEN_EXISTING;
-import core.sys.windows.winnt :
-	FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, GENERIC_READ, LARGE_INTEGER, PAGE_READONLY;
+import core.sys.windows.winbase : CreateFileA, CreateFileMappingA, GetFileSizeEx, MapViewOfFile, UnmapViewOfFile, CloseHandle, INVALID_HANDLE_VALUE, OPEN_EXISTING;
+import core.sys.windows.winnt : FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, GENERIC_READ, LARGE_INTEGER, PAGE_READONLY;
 
 private enum uint fileMapRead = 4; // FILE_MAP_READ
 
 /**
-* Maps `path` into memory for reading.
+* Maps the file at `path` into memory for reading.
+*
+* An empty file is returned as an empty `data` without being mapped, since the system calls reject a length of zero.
 *
 * Params:
-*   path = null terminated path to the file to map
-* Returns:
-*   The mapping; check `error` before using `data`.
+*   path = null-terminated path to the file to map
+* Returns: the mapping; on failure `error` says why and `data` is empty.
+*
+* Examples:
+* ---
+* auto file = mapFile("no such file.mizu");
+* scope(exit) unmapFile(file);
+* assert(file.error !is null);
+* assert(file.data.length == 0);
+* ---
 */
 MappedFile mapFile(const(char)* path) @trusted {
 	MappedFile result;
 
-	result.fileHandle = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, null,
-		OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, null);
+	result.fileHandle = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, null, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, null);
 	if (result.fileHandle is INVALID_HANDLE_VALUE) {
 		result.fileHandle = null;
 		result.error = "could not open the file";
@@ -69,7 +59,6 @@ MappedFile mapFile(const(char)* path) @trusted {
 		result.error = "could not measure the file";
 		return result;
 	}
-	// An empty file has nothing to map, and CreateFileMapping rejects it.
 	if (size.QuadPart == 0) return result;
 
 	result.mappingHandle = CreateFileMappingA(result.fileHandle, null, PAGE_READONLY, 0, 0, null);
@@ -88,11 +77,21 @@ MappedFile mapFile(const(char)* path) @trusted {
 	return result;
 }
 
-/// Releases a mapping made by `mapFile`. Safe to call on a failed one.
+/**
+* Releases a mapping made by `mapFile`, including a failed one, and resets `file` to `MappedFile.init`.
+*
+* Examples:
+* ---
+* auto file = mapFile("no such file.mizu");
+* unmapFile(file);
+* assert(file.error is null);
+* ---
+*/
 void unmapFile(ref MappedFile file) @trusted {
-	if (file.data.length) UnmapViewOfFile(cast(void*) file.data.ptr);
-	if (file.mappingHandle !is null) CloseHandle(file.mappingHandle);
-	if (file.fileHandle !is null) CloseHandle(file.fileHandle);
+	// Nothing useful can be done about a handle that will not close.
+	if (file.data.length) cast(void) UnmapViewOfFile(cast(void*) file.data.ptr);
+	if (file.mappingHandle !is null) cast(void) CloseHandle(file.mappingHandle);
+	if (file.fileHandle !is null) cast(void) CloseHandle(file.fileHandle);
 	file = MappedFile.init;
 }
 
@@ -114,16 +113,14 @@ MappedFile mapFile(const(char)* path) @trusted {
 		result.error = strerror(errno);
 		return result;
 	}
-	// The mapping keeps the file alive on its own, so the descriptor is only
-	// needed until `mmap` returns.
-	scope(exit) close(descriptor);
+	// The mapping keeps the file alive on its own, so the descriptor is only needed until `mmap` returns.
+	scope(exit) cast(void) close(descriptor);
 
 	stat_t status;
 	if (fstat(descriptor, &status) != 0) {
 		result.error = strerror(errno);
 		return result;
 	}
-	// An empty file has nothing to map, and `mmap` rejects a length of zero.
 	if (status.st_size <= 0) return result;
 
 	immutable length = cast(size_t) status.st_size;
@@ -140,7 +137,8 @@ MappedFile mapFile(const(char)* path) @trusted {
 
 /// Ditto
 void unmapFile(ref MappedFile file) @trusted {
-	if (file.mappedLength) munmap(cast(void*) file.data.ptr, file.mappedLength);
+	// `munmap` fails only for an address it never mapped, which `mappedLength` rules out.
+	if (file.mappedLength) cast(void) munmap(cast(void*) file.data.ptr, file.mappedLength);
 	file = MappedFile.init;
 }
 

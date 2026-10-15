@@ -36,7 +36,7 @@ mizu hello.mizu --generate-source
 [LDC](https://github.com/ldc-developers/ldc) is required — Mizu's dispatch depends on tail call
 optimization, which DMD does not perform — as is an optimizing build, which is why the `debug`
 build type here asks for `optimize` too. Mizu also needs **libffi** unless it is built with
-`-version=MizuNoFFI`; Linux and macOS package one, and on Windows `tools/vcpkg-libffi.ps1`
+`-version=MizuNoFFI`; Linux and macOS package one, and on Windows `Mizu/tools/vcpkg-libffi.ps1`
 builds one and stages it where the linker will look.
 
 ```bash
@@ -74,6 +74,51 @@ dub run -c example-hello-world --compiler=ldc2   # writes hello_world.mizu
 ./bin/mizu bubble.mizu        # prints nothing: the numbers came back sorted
 ./bin/mizu hello_world.mizu   # prints "Hello 世界" through libc's printf
 ```
+
+## Checking the documentation
+
+```bash
+python3 tools/doctest.py
+```
+
+Every public definition in [source/](source/) carries a DDoc comment with an example, and this
+compiles and runs each example under `-betterC`, then lists any definition missing either. It is
+Mizu's own `tools/doctest.py`, adapted to compile Mizu alongside this repository's modules; the
+conventions it checks are in [AGENTS.md](AGENTS.md).
+
+## Notes on the port
+
+The runner keeps the C++ one's behaviour; these are the places where the implementation had to
+differ, and why.
+
+**Arguments are parsed by hand.** The C++ runner used
+[argparse](https://github.com/morrisfranken/argparse), which builds on `std::string` and
+`std::optional`, neither of which exists under `-betterC`. The command line is two arguments
+long, so [source/arguments.d](source/arguments.d) spells it out instead.
+
+**Files are mapped with the system calls directly**, replacing the single-header
+[mio](https://github.com/mandreyel/mio) library. A Mizu binary is mapped once, read, and
+unmapped, which is all [source/mapped_file.d](source/mapped_file.d) does.
+
+**`--generate-header` is now `--generate-source`**, because the D port of Mizu generates D rather
+than a C++ header. The old spelling still works.
+
+**Asserts survive release builds** without the C++ runner's `#undef NDEBUG`: D keeps asserts
+unless `-release` drops them, and neither build type in [dub.json](dub.json) passes
+`releaseMode`.
+
+**Windows output is UTF-8.** The C++ runner switched the console's code page in a `windows.cpp`
+it `#include`d but which was never committed, so its Windows build had not compiled for some time.
+
+**A program with an instruction this build of Mizu does not know is rejected** before it runs,
+with the index of the first such instruction. Mizu loads an unknown ID as a null instruction, and
+dispatching to one jumps to address zero.
+
+**The bubble sort dumper fixes two bugs in the C++ program.** Its inner loop compared against the
+array's size rather than its last index, so the final iteration read, and could write, one element
+past the array, which sits at the very bottom of the stack and so past the end of Mizu's memory.
+And its check loop branched on register zero, which is always zero, so it never branched and the
+check halted before comparing anything.
 
 ## Licence
 
