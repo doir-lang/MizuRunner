@@ -1,29 +1,21 @@
 /**
-* MizuRunner: loads a program in Mizu's portable format and executes it.
+* MizuRunner: loads a program in Mizu's portable format and executes it, or prints it as D source.
 *
-* The D port of the C++ `runner.cpp`. Two things it did differently:
-*
-* $(UL
-*   $(LI It began with `#undef NDEBUG`, so that Mizu's asserts survived a
-*        release build. D spells that the other way around — asserts are
-*        there unless `-release` asks for them to go — so `dub.json` simply
-*        never passes `releaseMode`.)
-*   $(LI `--generate-header` printed a C++ header. The D port of Mizu
-*        generates D, so the flag is `--generate-source`; the old spelling
-*        still works.))
+* Mizu's asserts survive a release build because `dub.json` never passes `releaseMode`.
 */
 module runner;
 
-import core.stdc.stdio : fprintf, fputs, stderr, stdout;
+import core.stdc.stdio : EOF, fprintf, fputs, stderr, stdout;
 
-import fp.dynarray : dynarrayFree = free;
-import fp.pointer : ptrLength = length;
-import fp.string : stringFree = free;
+static import fp.dynarray;
+static import fp.pointer;
+static import fp.string;
+static import mizu.opcode;
+static import mizu.portable_format;
 
-import mizu;
-
-import arguments;
-import mapped_file;
+static import arguments;
+static import mapped_file;
+static import validation;
 
 @nogc nothrow:
 
@@ -31,55 +23,56 @@ version (Windows) {
 	import core.sys.windows.wincon : SetConsoleOutputCP;
 	import core.sys.windows.winnls : CP_UTF8;
 
-	/**
-	* Windows consoles default to a legacy code page, which turns any
-	* non-ASCII output from a Mizu program into mojibake.
-	*
-	* The C++ runner did this in a `windows.cpp` that it `#include`d — and
-	* which was never committed, so the Windows build has not compiled for
-	* some time. It is two lines, so here they are.
-	*/
-	private void useUtf8Console() @trusted { SetConsoleOutputCP(CP_UTF8); }
+	// Windows consoles default to a legacy code page, which garbles a Mizu program's non-ASCII output.
+	private void useUtf8Console() @trusted { cast(void) SetConsoleOutputCP(CP_UTF8); }
 } else
 	private void useUtf8Console() {}
 
 extern(C) int main(int argc, const(char*)* argv) @trusted {
 	useUtf8Console();
 
-	Arguments args;
-	final switch (parseArguments(argc, argv, args)) {
-		case Parse.run: break;
-		case Parse.done: return 0;
-		case Parse.failed: return 1;
+	arguments.Arguments args;
+	final switch (arguments.parseArguments(argc, argv, args)) {
+		case arguments.Parse.run: break;
+		case arguments.Parse.done: return 0;
+		case arguments.Parse.failed: return 1;
 	}
 
-	auto file = mapFile(args.file);
-	scope(exit) unmapFile(file);
+	auto file = mapped_file.mapFile(args.file);
+	scope(exit) mapped_file.unmapFile(file);
 	if (file.error !is null) {
-		fprintf(stderr, "Failed to read `%s`: %s\n", args.file, file.error);
+		cast(void) fprintf(stderr, "Failed to read `%s`: %s\n", args.file, file.error);
 		return 1;
 	}
 
-	auto loaded = fromPortable(file.data);
-	scope(exit) dynarrayFree(loaded.program);
-	auto program = loaded.program[0 .. ptrLength(loaded.program)];
-	// An empty or truncated file deserializes to no instructions at all, and
-	// there is nothing to hand the first one's dispatch.
+	auto loaded = mizu.portable_format.fromPortable(file.data);
+	scope(exit) fp.dynarray.free(loaded.program);
+	auto program = loaded.program[0 .. fp.pointer.length(loaded.program)];
+	// Covers allocation failure too, since `fromPortable` then returns a null program.
 	if (program.length == 0) {
-		fprintf(stderr, "`%s` holds no Mizu program.\n", args.file);
+		cast(void) fprintf(stderr, "`%s` holds no Mizu program.\n", args.file);
+		return 1;
+	}
+
+	immutable unknown = validation.firstUnknownInstruction(file.data);
+	if (unknown != fp.pointer.notFound) {
+		cast(void) fprintf(stderr, "`%s` uses an instruction this build of Mizu does not know, at index %zu.\n", args.file, unknown);
 		return 1;
 	}
 
 	if (args.generateSource) {
-		// The environment is printed as the program's starting memory, so
-		// this happens before `setupEnvironment` touches it.
-		auto source = generateSourceFile(program, loaded.environment);
-		scope(exit) stringFree(source);
-		fputs(source, stdout);
-		return 0;
+		// The environment is printed as the program's starting memory, so this happens before `setupEnvironment` touches it.
+		auto source = mizu.portable_format.generateSourceFile(program, loaded.environment);
+		scope(exit) fp.string.free(source);
+		if (source is null) {
+			cast(void) fprintf(stderr, "Ran out of memory generating source for `%s`.\n", args.file);
+			return 1;
+		}
+		return fputs(source, stdout) == EOF ? 1 : 0;
 	}
 
-	setupEnvironment(loaded.environment, program);
-	startFromEnvironment(program, loaded.environment);
+	mizu.opcode.setupEnvironment(loaded.environment, program);
+	// What the final instruction returned; `halt` returns null, and the runner has no use for anything else.
+	cast(void) mizu.opcode.startFromEnvironment(program, loaded.environment);
 	return 0;
 }

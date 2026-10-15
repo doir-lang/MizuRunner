@@ -1,13 +1,7 @@
 /**
-* Writes `bubble.mizu`: a program that bubble sorts 100 numbers sitting on
-* its stack and then checks the result against a sorted copy of them.
+* Writes `bubble.mizu`: a program that bubble sorts 100 numbers sitting on its stack and then checks the result against a sorted copy of them.
 *
-* Nothing is printed when the check passes; a mismatch prints the index it
-* happened at.
-*
-* The D port of the C++ `bubble_sort_dumper.cpp`, with two fixes the C++
-* program needed. See the comments on the inner loop's bound and on the
-* check loop's branch.
+* Nothing is printed when the check passes; a mismatch prints the index it happened at.
 *
 * Run with: `dub run -c example-bubble-sort --compiler=ldc2`
 */
@@ -15,8 +9,8 @@ module examples.bubble_sort_dumper;
 
 import core.stdc.stdio : fclose, fopen, fprintf, fwrite, stderr;
 
-import fp.dynarray : dynarrayFree = free;
-import fp.pointer : ptrLength = length;
+static import fp.dynarray;
+static import fp.pointer;
 
 import mizu;
 
@@ -38,11 +32,7 @@ static immutable ulong[100] sorted = [
 	1778, 1812, 1829, 1839, 1849, 1863, 1885, 1890, 1921, 1925, 1931, 1940, 1944, 1974, 1975
 ];
 
-/**
-* Both arrays, laid out as they will sit at the bottom of Mizu's stack:
-* `sorted` first, so that `numbers` — the copy the program sorts in place —
-* ends up directly under the stack pointer after the first `stackPush`.
-*/
+/// Both arrays, laid out as they will sit at the bottom of Mizu's stack: `sorted` first, so that `numbers`, the copy the program sorts in place, ends up directly under the stack pointer after the first `stackPush`.
 static immutable ulong[200] stackData = sorted ~ numbers;
 
 /// Registers this program keeps constants in, beyond the named ones.
@@ -71,8 +61,7 @@ static immutable Opcode[50] program = [
 	// a0 (size) = numbers.length, and the last index the inner loop may touch
 	Opcode(&loadImmediate, Registers.a(0)).setImmediate(numbers.length),
 	Opcode(&subtract, lastIndex, Registers.a(0), one),
-	// Reserve size * 8 bytes of stack, which puts the stack pointer at the
-	// copy of `numbers` the stack data ends with.
+	// Reserve size * 8 bytes of stack, which puts the stack pointer at the copy of `numbers` the stack data ends with.
 	Opcode(&multiply, Registers.t(0), elementSize, Registers.a(0)),
 	Opcode(&stackPush, 0, Registers.t(0)),
 	// a1 (changed) = true
@@ -86,10 +75,7 @@ static immutable Opcode[50] program = [
 		Opcode(&loadImmediate, Registers.a(2)).setImmediate(0), // i = 0
 
 		Opcode(&label).setImmediate(label2immediate("innr")),
-			// The C++ compared against the size rather than the last index,
-			// so the final iteration read (and could write) one element past
-			// the end of the array — which, the array being at the very
-			// bottom of the stack, is past the end of Mizu's memory too.
+			// Against the last index, not the size: the loop reads element i + 1, and past the array is past Mizu's memory.
 			Opcode(&setIfGreaterEqual, Registers.t(0), Registers.a(2), lastIndex),
 			Opcode(&branchTo, 0, Registers.t(0), bubbleLabel),
 			// t0 = i, then i += 1, so t0 is "i - 1" from here on
@@ -110,8 +96,7 @@ static immutable Opcode[50] program = [
 			Opcode(&jumpTo, 0, innerLabel),
 
 	Opcode(&label).setImmediate(label2immediate("chck")),
-	// Reserve another size * 8 bytes, putting the stack pointer at `sorted`
-	// with the freshly sorted `numbers` directly above it.
+	// Reserve another size * 8 bytes, putting the stack pointer at `sorted` with the freshly sorted `numbers` directly above it.
 	Opcode(&multiply, Registers.t(0), elementSize, Registers.a(0)),
 	Opcode(&stackPush, 0, Registers.t(0)),
 	Opcode(&loadImmediate, Registers.a(1)).setImmediate(0), // i = 0
@@ -119,9 +104,7 @@ static immutable Opcode[50] program = [
 	Opcode(&label).setImmediate(label2immediate("ctop")),
 		// if (i >= size) halt, everything matched
 		Opcode(&setIfLess, Registers.t(0), Registers.a(1), Registers.a(0)),
-		// The C++ left this branch's condition register at zero — which is
-		// the register that is always zero — so it never branched and the
-		// check halted before comparing anything.
+		// Branching on t0, not register zero, which is always zero and would halt before comparing anything.
 		Opcode(&branchRelativeImmediate, 0, Registers.t(0)).setBranchImmediate(2),
 		Opcode(&halt),
 		// t0 = sorted[i] at offset t1
@@ -143,18 +126,23 @@ static immutable Opcode[50] program = [
 
 extern(C) int main() @nogc nothrow {
 	auto portable = toPortable(program[], cast(const(void)[]) stackData[]);
-	scope(exit) dynarrayFree(portable);
+	scope(exit) fp.dynarray.free(portable);
+	if (portable is null) {
+		cast(void) fprintf(stderr, "Ran out of memory serializing the program.\n");
+		return 1;
+	}
 
 	auto file = fopen("bubble.mizu", "wb");
 	if (file is null) {
-		fprintf(stderr, "Failed to open `bubble.mizu` for writing.\n");
+		cast(void) fprintf(stderr, "Failed to open `bubble.mizu` for writing.\n");
 		return 1;
 	}
-	scope(exit) fclose(file);
 
-	immutable size = ptrLength(portable);
-	if (fwrite(portable, 1, size, file) != size) {
-		fprintf(stderr, "Failed to write `bubble.mizu`.\n");
+	immutable size = fp.pointer.length(portable);
+	immutable written = fwrite(portable, 1, size, file);
+	// `fclose` flushes, so a write can fail there as well as in `fwrite`.
+	if ((fclose(file) != 0) | (written != size)) {
+		cast(void) fprintf(stderr, "Failed to write `bubble.mizu`.\n");
 		return 1;
 	}
 
